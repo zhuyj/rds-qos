@@ -106,8 +106,10 @@ static void rds_ib_dev_free(struct work_struct *work)
 		rds_ib_destroy_mr_pool(rds_ibdev->mr_1m_pool);
 	if (rds_ibdev->pd)
 		ib_dealloc_pd(rds_ibdev->pd);
-	if (rds_ibdev->srq)
+	if (rds_ibdev->srq) {
+		rds_ib_srq_exit(rds_ibdev);
 		kfree(rds_ibdev->srq);
+	}
 
 	list_for_each_entry_safe(i_ipaddr, i_next, &rds_ibdev->ipaddr_list, list) {
 		list_del(&i_ipaddr->list);
@@ -232,12 +234,11 @@ static void rds_ib_add_one(struct ib_device *device)
 		device->name,
 		rds_ibdev->use_fastreg ? "FRMR" : "FMR");
 
-	rds_ibdev->srq = kmalloc(sizeof(struct rds_ib_srq), GFP_KERNEL);
-	if (!rds_ibdev->srq)
-		goto put_dev;
-
 	INIT_LIST_HEAD(&rds_ibdev->ipaddr_list);
 	INIT_LIST_HEAD(&rds_ibdev->conn_list);
+
+	if (rds_ib_srq_init(rds_ibdev))
+		goto put_dev;
 
 	down_write(&rds_ib_devices_lock);
 	list_add_tail_rcu(&rds_ibdev->list, &rds_ib_devices);
@@ -441,7 +442,6 @@ void rds_ib_exit(void)
 	rds_ib_unregister_client();
 	rds_ib_destroy_nodev_conns();
 	rds_ib_sysctl_exit();
-	rds_ib_srqs_exit();
 	rds_ib_recv_exit();
 	rds_trans_unregister(&rds_ib_transport);
 	rds_ib_mr_exit();
@@ -485,23 +485,17 @@ int rds_ib_init(void)
 	if (ret)
 		goto out;
 
-	ret = ib_register_client(&rds_ib_client);
-	if (ret)
-		goto out_mr_exit;
-
 	ret = rds_ib_sysctl_init();
 	if (ret)
-		goto out_ibreg;
+		goto out_mr_exit;
 
 	ret = rds_ib_recv_init();
 	if (ret)
 		goto out_sysctl;
 
-	ret = rds_ib_srqs_init();
-	if (ret) {
-		printk(KERN_ERR "rds_ib_srqs_init failed.\n");
-		goto out_sysctl;
-	}
+	ret = ib_register_client(&rds_ib_client);
+	if (ret)
+		goto out_recv;
 
 	rds_trans_register(&rds_ib_transport);
 
@@ -509,10 +503,10 @@ int rds_ib_init(void)
 
 	goto out;
 
+out_recv:
+        rds_ib_recv_exit();
 out_sysctl:
 	rds_ib_sysctl_exit();
-out_ibreg:
-	rds_ib_unregister_client();
 out_mr_exit:
 	rds_ib_mr_exit();
 out:
@@ -520,4 +514,3 @@ out:
 }
 
 MODULE_LICENSE("GPL");
-

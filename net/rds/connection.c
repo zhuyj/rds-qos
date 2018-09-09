@@ -189,6 +189,8 @@ static struct rds_connection *__rds_conn_create(struct net *net,
 
 	rds_conn_net_set(conn, net);
 
+	conn->c_tos = tos;
+
 	ret = rds_cong_get_maps(conn);
 	if (ret) {
 		kfree(conn->c_path);

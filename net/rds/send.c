@@ -97,7 +97,6 @@ void rds_send_path_reset(struct rds_conn_path *cp)
 		set_bit(RDS_MSG_RETRANSMITTED, &rm->m_flags);
 	}
 	list_splice_init(&cp->cp_retrans, &cp->cp_send_queue);
-	//cp->cp_conn->c_tos = tos;
 	spin_unlock_irqrestore(&cp->cp_lock, flags);
 }
 EXPORT_SYMBOL_GPL(rds_send_path_reset);

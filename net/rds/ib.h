@@ -360,6 +360,8 @@ static inline void rds_ib_dma_sync_sg_for_device(struct ib_device *dev,
 
 /* ib.c */
 extern struct rds_transport rds_ib_transport;
+void rds_ib_srq_exit(struct rds_ib_device *rds_ibdev);
+int rds_ib_srq_init(struct rds_ib_device *rds_ibdev);
 struct rds_ib_device *rds_ib_get_client_data(struct ib_device *device);
 void rds_ib_dev_put(struct rds_ib_device *rds_ibdev);
 extern struct ib_client rds_ib_client;
@@ -399,8 +401,6 @@ void rds_ib_mr_cqe_handler(struct rds_ib_connection *ic, struct ib_wc *wc);
 /* ib_recv.c */
 int rds_ib_recv_init(void);
 void rds_ib_recv_exit(void);
-int rds_ib_srqs_init(void);
-void rds_ib_srqs_exit(void);
 int rds_ib_recv_path(struct rds_conn_path *conn);
 int rds_ib_recv_alloc_caches(struct rds_ib_connection *ic);
 void rds_ib_recv_free_caches(struct rds_ib_connection *ic);
