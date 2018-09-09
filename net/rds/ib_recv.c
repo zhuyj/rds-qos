@@ -43,7 +43,10 @@
 unsigned int rds_ib_srq_max_wr = RDS_IB_DEFAULT_SRQ_MAX_WR;
 unsigned int rds_ib_srq_refill_wr = RDS_IB_DEFAULT_SRQ_REFILL_WR;
 unsigned int rds_ib_srq_low_wr = RDS_IB_DEFAULT_SRQ_LOW_WR;
+unsigned int rds_ib_srq_enabled = 0;
 
+module_param(rds_ib_srq_enabled, int, 0444);
+MODULE_PARM_DESC(rds_ib_srq_enabled, "Set to enabled SRQ");
 module_param(rds_ib_srq_max_wr, int, 0444);
 MODULE_PARM_DESC(rds_ib_srq_max_wr, "Max number of SRQ WRs");
 module_param(rds_ib_srq_refill_wr, int, 0444);
@@ -1209,7 +1212,7 @@ void rds_ib_recv_cqe_handler(struct rds_ib_connection *ic,
 		 be32_to_cpu(wc->ex.imm_data));
 
 	rds_ib_stats_inc(s_ib_rx_cq_event);
-	if (conn->c_tos) {
+	if (rds_ib_srq_enabled) {
 		recv = &rds_ibdev->srq->s_recvs[wc->wr_id];
 		atomic_dec(&rds_ibdev->srq->s_num_posted);
 	} else
@@ -1222,7 +1225,7 @@ void rds_ib_recv_cqe_handler(struct rds_ib_connection *ic,
 	 * event is processed.
 	 */
 	if (wc->status == IB_WC_SUCCESS) {
-		if (ic->conn->c_tos)
+		if (rds_ib_srq_enabled)
 			rds_ib_srq_process_recv(conn, recv, wc->byte_len, state);
 		else
 			rds_ib_process_recv(conn, recv, wc->byte_len, state);
@@ -1247,7 +1250,7 @@ void rds_ib_recv_cqe_handler(struct rds_ib_connection *ic,
 		recv->r_frag = NULL;
 	}
 
-	if (!ic->conn->c_tos) {
+	if (!rds_ib_srq_enabled) {
 		rds_ib_ring_free(&ic->i_recv_ring, 1);
 		rds_ib_recv_refill(conn, 0, 0);
 	} else {
@@ -1390,7 +1393,7 @@ int rds_ib_recv_path(struct rds_conn_path *cp)
 	int ret = 0;
 
 	rdsdebug("conn %p\n", conn);
-	if (rds_conn_up(conn)) {
+	if (!rds_ib_srq_enabled && rds_conn_up(conn)) {
 		rds_ib_attempt_ack(ic);
 		rds_ib_recv_refill(conn, 0, GFP_KERNEL);
 		rds_ib_stats_inc(s_ib_rx_refill_from_thread);
@@ -1529,6 +1532,9 @@ int rds_ib_srqs_init(void)
         struct rds_ib_device *rds_ibdev;
         int ret;
 
+	if (!rds_ib_srq_enabled)
+		return 0;
+
         list_for_each_entry(rds_ibdev, &rds_ib_devices, list) {
                 ret = rds_ib_srq_init(rds_ibdev);
                 if (ret) return ret;
@@ -1562,6 +1568,9 @@ void rds_ib_srq_exit(struct rds_ib_device *rds_ibdev)
 void rds_ib_srqs_exit(void)
 {
         struct rds_ib_device *rds_ibdev;
+
+	if (!rds_ib_srq_enabled)
+		return;
 
         list_for_each_entry(rds_ibdev, &rds_ib_devices, list) {
                 rds_ib_srq_exit(rds_ibdev);

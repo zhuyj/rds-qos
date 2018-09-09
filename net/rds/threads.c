@@ -90,8 +90,7 @@ void rds_connect_path_complete(struct rds_conn_path *cp, int curr)
 	rcu_read_lock();
 	if (!rds_destroy_pending(cp->cp_conn)) {
 		queue_delayed_work(rds_wq, &cp->cp_send_w, 0);
-		if (!cp->cp_conn->c_tos)
-			queue_delayed_work(rds_wq, &cp->cp_recv_w, 0);
+		queue_delayed_work(rds_wq, &cp->cp_recv_w, 0);
 	}
 	rcu_read_unlock();
 }

@@ -158,12 +158,12 @@ void rds_ib_cm_connect_complete(struct rds_connection *conn, struct rdma_cm_even
 	 * from 3.1 to 4.1.
 	 */
 	rds_ib_send_init_ring(ic);
-	if (!ic->conn->c_tos)
+	if (!rds_ib_srq_enabled)
 		rds_ib_recv_init_ring(ic);
 
 	/* Post receive buffers - as a side effect, this will update
 	 * the posted credit count. */
-	if (!ic->conn->c_tos)
+	if (!rds_ib_srq_enabled)
 		rds_ib_recv_refill(conn, 1, GFP_KERNEL);
 
 	/* Tune RNR behavior */
@@ -362,7 +362,7 @@ static void rds_ib_tasklet_fn_recv(unsigned long data)
 	if (rds_conn_up(conn))
 		rds_ib_attempt_ack(ic);
 
-        if (conn->c_tos) {
+        if (rds_ib_srq_enabled) {
                 if ((atomic_read(&rds_ibdev->srq->s_num_posted) <
                                         rds_ib_srq_refill_wr) &&
                      !test_and_set_bit(0, &rds_ibdev->srq->s_refill_gate))
@@ -486,7 +486,7 @@ static int rds_ib_setup_qp(struct rds_connection *conn)
 	}
 
 	ic->i_rcq_vector = ibdev_get_unused_vector(rds_ibdev);
-	if (ic->conn->c_tos) {
+	if (rds_ib_srq_enabled) {
 		cq_attr.cqe = rds_ib_srq_max_wr - 1;
 	} else {
 		cq_attr.cqe = ic->i_recv_ring.w_nr;
@@ -530,7 +530,7 @@ static int rds_ib_setup_qp(struct rds_connection *conn)
 	attr.recv_cq = ic->i_recv_cq;
 	atomic_set(&ic->i_fastreg_wrs, RDS_IB_DEFAULT_FR_WR);
 	atomic_set(&ic->i_fastunreg_wrs, RDS_IB_DEFAULT_FR_INV_WR);
-        if (ic->conn->c_tos) {
+        if (rds_ib_srq_enabled) {
                 attr.cap.max_recv_wr = 0;
                 attr.srq = rds_ibdev->srq->s_srq;
         }
@@ -555,7 +555,7 @@ static int rds_ib_setup_qp(struct rds_connection *conn)
 		goto qp_out;
 	}
 
-	if (!ic->conn->c_tos) {
+	if (!rds_ib_srq_enabled) {
 		ic->i_recv_hdrs = ib_dma_alloc_coherent(dev,
 						   ic->i_recv_ring.w_nr *
 							sizeof(struct rds_header),
@@ -583,7 +583,7 @@ static int rds_ib_setup_qp(struct rds_connection *conn)
 		goto ack_dma_out;
 	}
 
-	if (!ic->conn->c_tos) {
+	if (!rds_ib_srq_enabled) {
 		ic->i_recvs = vzalloc_node(array_size(sizeof(struct rds_ib_recv_work),
 						      ic->i_recv_ring.w_nr),
 					   ibdev_to_node(dev));
@@ -873,7 +873,7 @@ void rds_ib_conn_path_shutdown(struct rds_conn_path *cp)
 			 */
 			rdsdebug("failed to disconnect, cm: %p err %d\n",
 				ic->i_cm_id, err);
-                } else if (ic->conn->c_tos && ic->rds_ibdev) {
+                } else if (rds_ib_srq_enabled && ic->rds_ibdev) {
                         /*
                          * wait for the last wqe to complete, then schedule
                          * the recv tasklet to drain the RX CQ.
@@ -990,7 +990,7 @@ void rds_ib_conn_path_shutdown(struct rds_conn_path *cp)
 
 	vfree(ic->i_sends);
 	ic->i_sends = NULL;
-	if (!ic->conn->c_tos)
+	if (!rds_ib_srq_enabled)
 		vfree(ic->i_recvs);
 
 	ic->i_recvs = NULL;
