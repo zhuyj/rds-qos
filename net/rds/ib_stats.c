@@ -79,6 +79,9 @@ static const char *const rds_ib_stat_names[] = {
 	"ib_rdma_mr_1m_reused",
 	"ib_atomic_cswp",
 	"ib_atomic_fadd",
+	"ib_srq_lows",
+	"ib_srq_refills",
+	"ib_srq_empty_refills",
 };
 
 unsigned int rds_ib_stats_info_copy(struct rds_info_iterator *iter,

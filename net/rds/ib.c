@@ -106,6 +106,8 @@ static void rds_ib_dev_free(struct work_struct *work)
 		rds_ib_destroy_mr_pool(rds_ibdev->mr_1m_pool);
 	if (rds_ibdev->pd)
 		ib_dealloc_pd(rds_ibdev->pd);
+	if (rds_ibdev->srq)
+		kfree(rds_ibdev->srq);
 
 	list_for_each_entry_safe(i_ipaddr, i_next, &rds_ibdev->ipaddr_list, list) {
 		list_del(&i_ipaddr->list);
@@ -122,6 +124,28 @@ void rds_ib_dev_put(struct rds_ib_device *rds_ibdev)
 	BUG_ON(refcount_read(&rds_ibdev->refcount) == 0);
 	if (refcount_dec_and_test(&rds_ibdev->refcount))
 		queue_work(rds_wq, &rds_ibdev->free_work);
+}
+
+static struct ib_mr *ib_get_dma_mr(struct ib_pd *pd, int mr_access_flags)
+{
+	struct ib_mr *mr;
+	int err;
+
+	err = ib_check_mr_access(mr_access_flags);
+	if (err)
+		return ERR_PTR(err);
+
+	mr = pd->device->get_dma_mr(pd, mr_access_flags);
+
+	if (!IS_ERR(mr)) {
+		mr->device      = pd->device;
+		mr->pd          = pd;
+		mr->uobject     = NULL;
+		mr->need_inval  = false;
+		atomic_inc(&pd->usecnt);
+	}
+
+	return mr;
 }
 
 static void rds_ib_add_one(struct ib_device *device)
@@ -193,6 +217,12 @@ static void rds_ib_add_one(struct ib_device *device)
 		goto put_dev;
 	}
 
+	rds_ibdev->mr = ib_get_dma_mr(rds_ibdev->pd, IB_ACCESS_LOCAL_WRITE);
+	if (IS_ERR(rds_ibdev->mr)) {
+		rds_ibdev->mr = NULL;
+		goto put_dev;
+	}
+
 	rdsdebug("RDS/IB: max_mr = %d, max_wrs = %d, max_sge = %d, fmr_max_remaps = %d, max_1m_mrs = %d, max_8k_mrs = %d\n",
 		 device->attrs.max_fmr, rds_ibdev->max_wrs, rds_ibdev->max_sge,
 		 rds_ibdev->fmr_max_remaps, rds_ibdev->max_1m_mrs,
@@ -201,6 +231,10 @@ static void rds_ib_add_one(struct ib_device *device)
 	pr_info("RDS/IB: %s: %s supported and preferred\n",
 		device->name,
 		rds_ibdev->use_fastreg ? "FRMR" : "FMR");
+
+	rds_ibdev->srq = kmalloc(sizeof(struct rds_ib_srq), GFP_KERNEL);
+	if (!rds_ibdev->srq)
+		goto put_dev;
 
 	INIT_LIST_HEAD(&rds_ibdev->ipaddr_list);
 	INIT_LIST_HEAD(&rds_ibdev->conn_list);
@@ -314,6 +348,9 @@ static int rds_ib_conn_info_visitor(struct rds_connection *conn,
 		iinfo->max_recv_wr = ic->i_recv_ring.w_nr;
 		iinfo->max_send_sge = rds_ibdev->max_sge;
 		rds_ib_get_mr_info(rds_ibdev, iinfo);
+		iinfo->tos = ic->conn->c_tos;
+		iinfo->sl = ic->i_sl;
+		iinfo->cache_allocs = atomic_read(&ic->i_cache_allocs);
 	}
 	return 1;
 }
@@ -404,6 +441,7 @@ void rds_ib_exit(void)
 	rds_ib_unregister_client();
 	rds_ib_destroy_nodev_conns();
 	rds_ib_sysctl_exit();
+	rds_ib_srqs_exit();
 	rds_ib_recv_exit();
 	rds_trans_unregister(&rds_ib_transport);
 	rds_ib_mr_exit();
@@ -458,6 +496,12 @@ int rds_ib_init(void)
 	ret = rds_ib_recv_init();
 	if (ret)
 		goto out_sysctl;
+
+	ret = rds_ib_srqs_init();
+	if (ret) {
+		printk(KERN_ERR "rds_ib_srqs_init failed.\n");
+		goto out_sysctl;
+	}
 
 	rds_trans_register(&rds_ib_transport);
 

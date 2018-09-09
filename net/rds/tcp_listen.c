@@ -170,7 +170,7 @@ int rds_tcp_accept_one(struct socket *sock)
 
 	conn = rds_conn_create(sock_net(sock->sk),
 			       inet->inet_saddr, inet->inet_daddr,
-			       &rds_tcp_transport, GFP_KERNEL);
+			       &rds_tcp_transport, 0, GFP_KERNEL);
 	if (IS_ERR(conn)) {
 		ret = PTR_ERR(conn);
 		goto out;

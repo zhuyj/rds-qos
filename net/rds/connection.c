@@ -73,12 +73,14 @@ static struct hlist_head *rds_conn_bucket(__be32 laddr, __be32 faddr)
 static struct rds_connection *rds_conn_lookup(struct net *net,
 					      struct hlist_head *head,
 					      __be32 laddr, __be32 faddr,
-					      struct rds_transport *trans)
+					      struct rds_transport *trans,
+					      u8 tos)
 {
 	struct rds_connection *conn, *ret = NULL;
 
 	hlist_for_each_entry_rcu(conn, head, c_hash_node) {
 		if (conn->c_faddr == faddr && conn->c_laddr == laddr &&
+		    conn->c_tos == tos &&
 		    conn->c_trans == trans && net == rds_conn_net(conn)) {
 			ret = conn;
 			break;
@@ -144,6 +146,7 @@ static void __rds_conn_path_init(struct rds_connection *conn,
 static struct rds_connection *__rds_conn_create(struct net *net,
 						__be32 laddr, __be32 faddr,
 				       struct rds_transport *trans, gfp_t gfp,
+				       u8 tos,
 				       int is_outgoing)
 {
 	struct rds_connection *conn, *parent = NULL;
@@ -154,7 +157,7 @@ static struct rds_connection *__rds_conn_create(struct net *net,
 	int npaths = (trans->t_mp_capable ? RDS_MPATH_WORKERS : 1);
 
 	rcu_read_lock();
-	conn = rds_conn_lookup(net, head, laddr, faddr, trans);
+	conn = rds_conn_lookup(net, head, laddr, faddr, trans, tos);
 	if (conn && conn->c_loopback && conn->c_trans != &rds_loop_transport &&
 	    laddr == faddr && !is_outgoing) {
 		/* This is a looped back IB connection, and we're
@@ -262,7 +265,7 @@ static struct rds_connection *__rds_conn_create(struct net *net,
 		/* Creating normal conn */
 		struct rds_connection *found;
 
-		found = rds_conn_lookup(net, head, laddr, faddr, trans);
+		found = rds_conn_lookup(net, head, laddr, faddr, trans, tos);
 		if (found) {
 			struct rds_conn_path *cp;
 			int i;
@@ -296,17 +299,31 @@ out:
 
 struct rds_connection *rds_conn_create(struct net *net,
 				       __be32 laddr, __be32 faddr,
-				       struct rds_transport *trans, gfp_t gfp)
+				       struct rds_transport *trans, u8 tos, gfp_t gfp)
 {
-	return __rds_conn_create(net, laddr, faddr, trans, gfp, 0);
+	return __rds_conn_create(net, laddr, faddr, trans, gfp, tos, 0);
 }
 EXPORT_SYMBOL_GPL(rds_conn_create);
 
+struct rds_connection *rds_conn_find(struct net *net, __be32 laddr, __be32 faddr,
+                                        struct rds_transport *trans, u8 tos)
+{
+	struct rds_connection *conn;
+	struct hlist_head *head = rds_conn_bucket(laddr, faddr);
+
+	rcu_read_lock();
+	conn = rds_conn_lookup(net, head, laddr, faddr, trans, tos);
+	rcu_read_unlock();
+
+	return conn;
+}
+EXPORT_SYMBOL_GPL(rds_conn_find);
+
 struct rds_connection *rds_conn_create_outgoing(struct net *net,
 						__be32 laddr, __be32 faddr,
-				       struct rds_transport *trans, gfp_t gfp)
+				       struct rds_transport *trans, u8 tos, gfp_t gfp)
 {
-	return __rds_conn_create(net, laddr, faddr, trans, gfp, 1);
+	return __rds_conn_create(net, laddr, faddr, trans, gfp, tos, 1);
 }
 EXPORT_SYMBOL_GPL(rds_conn_create_outgoing);
 
@@ -629,6 +646,7 @@ static int rds_conn_info_visitor(struct rds_conn_path *cp, void *buffer)
 	cinfo->next_rx_seq = cp->cp_next_rx_seq;
 	cinfo->laddr = cp->cp_conn->c_laddr;
 	cinfo->faddr = cp->cp_conn->c_faddr;
+	cinfo->tos = cp->cp_conn->c_tos;
 	strncpy(cinfo->transport, cp->cp_conn->c_trans->t_name,
 		sizeof(cinfo->transport));
 	cinfo->flags = 0;

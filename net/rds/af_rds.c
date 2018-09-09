@@ -197,7 +197,28 @@ static __poll_t rds_poll(struct file *file, struct socket *sock,
 
 static int rds_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 {
-	return -ENOIOCTLCMD;
+	struct rds_sock *rs = rds_sk_to_rs(sock->sk);
+	rds_tos_t tos;
+	unsigned long flags;
+
+	if (get_user(tos, (rds_tos_t __user *)arg))
+		return -EFAULT;
+
+	switch (cmd) {
+	case SIOCRDSSETTOS:
+		spin_lock_irqsave(&rds_sock_lock, flags);
+		if (rs->rs_tos || rs->rs_conn) {
+			spin_unlock_irqrestore(&rds_sock_lock, flags);
+			return -EINVAL;
+		}
+		rs->rs_tos = tos;
+		spin_unlock_irqrestore(&rds_sock_lock, flags);
+		break;
+	default:
+		return -ENOPROTOOPT;
+	}
+
+	return 0;
 }
 
 static int rds_cancel_sent_to(struct rds_sock *rs, char __user *optval,
@@ -328,6 +349,34 @@ static int rds_recv_track_latency(struct rds_sock *rs, char __user *optval,
 	return 0;
 }
 
+static int rds_user_reset(struct rds_sock *rs, char __user *optval, int optlen)
+{
+	struct rds_reset reset;
+	struct rds_connection *conn;
+
+	if (optlen != sizeof(struct rds_reset))
+		return -EINVAL;
+
+	if (copy_from_user(&reset, (struct rds_reset __user *)optval,
+			sizeof(struct rds_reset)))
+		return -EFAULT;
+
+	conn = rds_conn_find(sock_net(rds_rs_to_sk(rs)),
+				reset.src.s_addr, reset.dst.s_addr,
+				rs->rs_transport, reset.tos);
+
+	if (conn) {
+		printk(KERN_NOTICE "Resetting RDS/IB connection "
+				"<%pI4,%pI4,%d>\n",
+				&reset.src.s_addr,
+				&reset.dst.s_addr, conn->c_tos);
+		rds_conn_drop(conn);
+	}
+
+	return 0;
+}
+
+
 static int rds_setsockopt(struct socket *sock, int level, int optname,
 			  char __user *optval, unsigned int optlen)
 {
@@ -370,6 +419,9 @@ static int rds_setsockopt(struct socket *sock, int level, int optname,
 		break;
 	case SO_RDS_MSG_RXPATH_LATENCY:
 		ret = rds_recv_track_latency(rs, optval, optlen);
+		break;
+	case RDS_CONN_RESET:
+		ret = rds_user_reset(rs, optval, optlen);
 		break;
 	default:
 		ret = -ENOPROTOOPT;
@@ -519,6 +571,8 @@ static int __rds_create(struct socket *sock, struct sock *sk, int protocol)
 	spin_lock_init(&rs->rs_rdma_lock);
 	rs->rs_rdma_keys = RB_ROOT;
 	rs->rs_rx_traces = 0;
+	rs->rs_tos = 0;
+	rs->rs_conn = 0;
 
 	spin_lock_bh(&rds_sock_lock);
 	list_add_tail(&rs->rs_item, &rds_sock_list);

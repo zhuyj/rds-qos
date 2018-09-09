@@ -18,7 +18,8 @@
  */
 #define RDS_PROTOCOL_3_0	0x0300
 #define RDS_PROTOCOL_3_1	0x0301
-#define RDS_PROTOCOL_VERSION	RDS_PROTOCOL_3_1
+#define RDS_PROTOCOL_3_2        0x0302
+#define RDS_PROTOCOL_VERSION    RDS_PROTOCOL_3_2
 #define RDS_PROTOCOL_MAJOR(v)	((v) >> 8)
 #define RDS_PROTOCOL_MINOR(v)	((v) & 255)
 #define RDS_PROTOCOL(maj, min)	(((maj) << 8) | min)
@@ -131,6 +132,8 @@ struct rds_conn_path {
 	unsigned int		cp_unacked_packets;
 	unsigned int		cp_unacked_bytes;
 	unsigned int		cp_index;
+	/* Qos support */
+	u8			c_tos;
 };
 
 /* One rds_connection per RDS address pair */
@@ -160,6 +163,7 @@ struct rds_connection {
 
 	u32			c_my_gen_num;
 	u32			c_peer_gen_num;
+	u8			c_tos;
 };
 
 static inline
@@ -623,6 +627,7 @@ struct rds_sock {
 	u8			rs_rx_traces;
 	u8			rs_rx_trace[RDS_MSG_RX_DGRAM_TRACE_MAX];
 	struct rds_msg_zcopy_queue rs_zcookie_queue;
+	u8			rs_tos;
 };
 
 static inline struct rds_sock *rds_sk_to_rs(const struct sock *sk)
@@ -729,10 +734,13 @@ int rds_conn_init(void);
 void rds_conn_exit(void);
 struct rds_connection *rds_conn_create(struct net *net,
 				       __be32 laddr, __be32 faddr,
-				       struct rds_transport *trans, gfp_t gfp);
+				       struct rds_transport *trans, u8 tos, gfp_t gfp);
 struct rds_connection *rds_conn_create_outgoing(struct net *net,
 						__be32 laddr, __be32 faddr,
-			       struct rds_transport *trans, gfp_t gfp);
+			       struct rds_transport *trans, u8 tos, gfp_t gfp);
+struct rds_connection *rds_conn_find(struct net *net, __be32 laddr, __be32 faddr,
+                                     struct rds_transport *trans, u8 tos);
+ 
 void rds_conn_shutdown(struct rds_conn_path *cpath);
 void rds_conn_destroy(struct rds_connection *conn);
 void rds_conn_drop(struct rds_connection *conn);

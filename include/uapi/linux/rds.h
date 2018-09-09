@@ -53,6 +53,7 @@
 #define RDS_CONG_MONITOR		6
 #define RDS_GET_MR_FOR_DEST		7
 #define SO_RDS_TRANSPORT		8
+#define RDS_CONN_RESET			9
 
 /* Socket option to tap receive path latency
  *	SO_RDS: SO_RDS_MSG_RXPATH_LATENCY
@@ -67,6 +68,12 @@
 #define	RDS_TRANS_TCP	2
 #define RDS_TRANS_COUNT	3
 #define	RDS_TRANS_NONE	(~0)
+
+/*
+ * ioctl commands for SOL_RDS
+*/
+#define SIOCRDSSETTOS		(SIOCPROTOPRIVATE)
+typedef u_int8_t		rds_tos_t;
 
 /*
  * Control message types for SOL_RDS.
@@ -138,6 +145,7 @@ struct rds_info_connection {
 	__be32		faddr;
 	__u8		transport[TRANSNAMSIZ];		/* null term ascii */
 	__u8		flags;
+	__u8		tos;
 } __attribute__((packed));
 
 #define RDS_INFO_MESSAGE_FLAG_ACK               0x01
@@ -151,6 +159,7 @@ struct rds_info_message {
 	__be16		lport;
 	__be16		fport;
 	__u8		flags;
+	__u8		tos;
 } __attribute__((packed));
 
 struct rds_info_socket {
@@ -187,6 +196,9 @@ struct rds_info_rdma_connection {
 	__u32		max_send_sge;
 	__u32		rdma_mr_max;
 	__u32		rdma_mr_size;
+	__u8		tos;
+	__u8		sl;
+	__u32		cache_allocs;
 };
 
 /* RDS message Receive Path Latency points */
@@ -305,6 +317,12 @@ struct rds_atomic_args {
 	};
 	__u64		flags;
 	__u64		user_token;
+};
+
+struct rds_reset {
+	u_int8_t        tos;
+	struct in_addr  src;
+	struct in_addr  dst;
 };
 
 struct rds_rdma_notify {

@@ -97,6 +97,7 @@ void rds_send_path_reset(struct rds_conn_path *cp)
 		set_bit(RDS_MSG_RETRANSMITTED, &rm->m_flags);
 	}
 	list_splice_init(&cp->cp_retrans, &cp->cp_send_queue);
+	//cp->cp_conn->c_tos = tos;
 	spin_unlock_irqrestore(&cp->cp_lock, flags);
 }
 EXPORT_SYMBOL_GPL(rds_send_path_reset);
@@ -1155,12 +1156,13 @@ int rds_sendmsg(struct socket *sock, struct msghdr *msg, size_t payload_len)
 
 	/* rds_conn_create has a spinlock that runs with IRQ off.
 	 * Caching the conn in the socket helps a lot. */
-	if (rs->rs_conn && rs->rs_conn->c_faddr == daddr)
+	if (rs->rs_conn && rs->rs_conn->c_faddr == daddr &&
+		rs->rs_tos == rs->rs_conn->c_tos)
 		conn = rs->rs_conn;
 	else {
 		conn = rds_conn_create_outgoing(sock_net(sock->sk),
 						rs->rs_bound_addr, daddr,
-					rs->rs_transport,
+					rs->rs_transport, rs->rs_tos,
 					sock->sk->sk_allocation);
 		if (IS_ERR(conn)) {
 			ret = PTR_ERR(conn);
