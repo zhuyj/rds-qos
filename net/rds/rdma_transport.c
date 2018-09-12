@@ -81,6 +81,9 @@ int rds_rdma_cm_event_handler(struct rdma_cm_id *cm_id,
 		/* XXX do we need to clean up if this fails? */
 		ret = rdma_resolve_route(cm_id,
 					 RDS_RDMA_RESOLVE_TIMEOUT_MS);
+		if (!ret) {
+			cm_id->route.path_rec->sl = conn->c_tos & 0xF;
+		}
 		break;
 
 	case RDMA_CM_EVENT_ROUTE_RESOLVED:
