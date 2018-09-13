@@ -53,8 +53,7 @@ void rds_inc_init(struct rds_incoming *inc, struct rds_connection *conn,
 	inc->i_rx_tstamp.tv_sec = 0;
 	inc->i_rx_tstamp.tv_usec = 0;
 
-	for (i = 0; i < RDS_RX_MAX_TRACES; i++)
-		inc->i_rx_lat_trace[i] = 0;
+	memset(inc->i_rx_lat_trace, 0, sizeof(inc->i_rx_lat_trace));
 }
 EXPORT_SYMBOL_GPL(rds_inc_init);
 
